@@ -15,16 +15,24 @@ This is a **Pytorch** implementations of *"HITNet: Hierarchical Iterative Tile R
 
 ### Training
 
+1.
+
+  ```
+  python3 -m venv venv
+  source venv/bin/activate
+  pip install torch
+  ```
+
 1) Compile and install cuda op
     ```shell
-    pip install ./ext_op
+    CC=gcc-10 CXX=g++-10 pip install ./ext_op
     ```
 
 2) Replace dataset path in **preprocess/plane_fitting.py** and **script/hitnet_sf_finalpass.sh**
 
 3) Robust plane fitting 
     ```
-    python preprocess/plane_fitting_sf.py
+    python -m preprocess.plane_fitting_sf
     ```
 
 2) Training

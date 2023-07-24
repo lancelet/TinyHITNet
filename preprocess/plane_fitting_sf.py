@@ -4,6 +4,7 @@ import numpy as np
 import HitnetModule
 from pathlib import Path
 import multiprocessing as mp
+import os
 
 from dataset.utils import readPFM, np2torch
 
@@ -37,11 +38,12 @@ def main(root, list_path):
     with open(list_path, "rt") as fp:
         file_list = [Path(line.strip()) for line in fp]
 
-    lock_list = [mp.Lock() for _ in range(8)]
-    with mp.Pool(8, process_init, [lock_list, root]) as pool:
+    lock_list = [mp.Lock() for _ in range(2)]
+    with mp.Pool(2, process_init, [lock_list, root]) as pool:
         list(tqdm.tqdm(pool.imap_unordered(process, file_list), total=len(file_list)))
 
 
 if __name__ == "__main__":
-    main("/home/tiger/SceneFlow", "lists/sceneflow_train.list")
-    main("/home/tiger/SceneFlow", "lists/sceneflow_test.list")
+    sf_dir = os.getenv('SF_DIR')
+    main(sf_dir, "lists/sceneflow_train_fly3d_only.list")
+    main(sf_dir, "lists/sceneflow_test.list")

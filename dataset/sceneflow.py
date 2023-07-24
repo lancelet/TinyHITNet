@@ -35,7 +35,6 @@ class SceneFlowDataset(Dataset):
         dxy_path = (
             self.root / "slant_window" / self.file_list[index].with_suffix(".npy")
         )
-
         data = {
             "left": np2torch(cv2.imread(str(left_path), cv2.IMREAD_COLOR), bgr=True),
             "right": np2torch(cv2.imread(str(right_path), cv2.IMREAD_COLOR), bgr=True),

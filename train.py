@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
+import matplotlib.pyplot as plt
+import numpy as np
 
 from losses import calc_loss
 from models import build_model
@@ -12,7 +14,32 @@ from torchmetrics import MetricCollection
 
 
 class TrainModel(pl.LightningModule):
-    def __init__(self, **kwargs):
+    #def __init__(self, **kwargs):
+    def __init__(
+            self,
+            model='StereoNet',
+            lr=1e-3,
+            max_disp=192,
+            max_disp_val=None,
+            data_type_train='SceneFlow',
+            data_root_train=None,
+            data_type_val='SceneFlow',
+            data_root_val=None,
+            data_list_train=None,
+            data_list_val=None,
+            data_size_train=(960, 512),
+            data_size_val=(960, 540),
+            data_augmentation=0,
+            batch_size=2,
+            batch_size_val=2,
+            num_workers=2,
+            num_workers_val=2,
+            robust_loss_a=0.9,
+            robust_loss_c=0.1,
+            HITTI_A=1,
+            HITTI_B=1,
+            init_loss_k=3
+        ):
         super().__init__()
         self.save_hyperparameters()
 
@@ -36,7 +63,8 @@ class TrainModel(pl.LightningModule):
     def forward(self, batch):
         left = batch["left"] * 2 - 1
         right = batch["right"] * 2 - 1
-        return self.model(left, right)
+        result = self.model(left, right)
+        return result
 
     def training_step(self, batch, batch_idx):
         scheduler = self.lr_schedulers()
@@ -53,22 +81,35 @@ class TrainModel(pl.LightningModule):
         optimizer.zero_grad()
         self.manual_backward(loss)
         optimizer.step()
-        scheduler.step()
+        # scheduler.step()
 
         mask = (batch["disp"] < self.max_disp) & (batch["disp"] > 1e-3)
         self.train_metric(pred["disp"], batch["disp"], mask)
         self.log_dict(loss_dict, on_step=True)
 
-    def training_epoch_end(self, outputs):
+    def on_training_epoch_end(self, outputs):
         self.log_dict(self.train_metric.compute(), prog_bar=False)
         self.train_metric.reset()
 
     def validation_step(self, batch, batch_idx):
         pred = self(batch)
         mask = (batch["disp"] < self.max_disp_val) & (batch["disp"] > 1e-3)
+        
+        if batch_idx == 0:
+            result = self(batch)
+            disp = result['disp'][0,0,:,:].cpu().detach().numpy()
+
+            fig, ax = plt.subplots(figsize=plt.figaspect(disp))
+            fig.subplots_adjust(0,0,1,1)
+            ax.imshow(disp)
+            plt.show()
+            self.logger.experiment.add_figure('test_depth_image', fig, global_step=self.global_step)
+            plt.close()
+            torch.cuda.empty_cache()
+
         self.val_metric(pred["disp"], batch["disp"], mask)
 
-    def validation_epoch_end(self, outputs):
+    def on_validation_epoch_end(self):
         self.log_dict(self.val_metric.compute(), prog_bar=True)
         self.val_metric.reset()
 
@@ -122,7 +163,7 @@ class TrainModel(pl.LightningModule):
         dataset = build_dataset(self.hparams, training=True)
         return torch.utils.data.DataLoader(
             dataset,
-            batch_size=self.hparams.batch_size // self.trainer.num_gpus,
+            batch_size=self.hparams.batch_size,
             num_workers=self.hparams.num_workers,
             shuffle=True,
             pin_memory=True,
@@ -133,39 +174,43 @@ class TrainModel(pl.LightningModule):
         dataset = build_dataset(self.hparams, training=False)
         return torch.utils.data.DataLoader(
             dataset,
-            batch_size=self.hparams.batch_size_val // self.trainer.num_gpus,
+            batch_size=self.hparams.batch_size_val,
             num_workers=self.hparams.num_workers_val,
             pin_memory=True,
         )
 
 
 if __name__ == "__main__":
-    from opt import build_parser
-    from pytorch_lightning.plugins import DDPPlugin
-    from pytorch_lightning.callbacks import LearningRateMonitor
-    from pytorch_lightning import loggers as pl_loggers
-    from callback import LogColorDepthMapCallback
+    # from opt import build_parser
+    # from pytorch_lightning.strategies import DDPStrategy
+    # from pytorch_lightning.callbacks import LearningRateMonitor
+    # from pytorch_lightning import loggers as pl_loggers
+    # from callback import LogColorDepthMapCallback
+    
+    from pytorch_lightning.cli import LightningCLI
 
-    parser = build_parser()
-    parser = pl.Trainer.add_argparse_args(parser)
-    args = parser.parse_args()
+    cli = LightningCLI(TrainModel, save_config_kwargs={'overwrite': True})     
 
-    pl.seed_everything(seed=args.seed)
+    # parser = build_parser()
+    # parser = pl.Trainer.add_argparse_args(parser)
+    # args = parser.parse_args()
 
-    model = TrainModel(**vars(args))
-    if args.pretrain is not None:
-        ckpt = torch.load(args.pretrain)
-        if "state_dict" in ckpt:
-            model.load_state_dict(ckpt["state_dict"])
-        else:
-            model.model.load_state_dict(ckpt)
+    # pl.seed_everything(seed=args.seed)
+
+    # model = TrainModel(**vars(args))
+    # if args.pretrain is not None:
+    #     ckpt = torch.load(args.pretrain)
+    #     if "state_dict" in ckpt:
+    #         model.load_state_dict(ckpt["state_dict"])
+    #     else:
+    #         model.model.load_state_dict(ckpt)
             
-    trainer = pl.Trainer.from_argparse_args(
-        args,
-        logger=pl_loggers.TensorBoardLogger(args.log_dir, args.exp_name),
-        callbacks=[
-            LearningRateMonitor(logging_interval="step"),
-            LogColorDepthMapCallback(),
-        ],
-    )
-    trainer.fit(model)
+    # trainer = pl.Trainer.from_argparse_args(
+    #     args,
+    #     logger=pl_loggers.TensorBoardLogger(args.log_dir, args.exp_name),
+    #     callbacks=[
+    #         LearningRateMonitor(logging_interval="step"),
+    #         LogColorDepthMapCallback(),
+    #     ],
+    # )
+    # trainer.fit(model)

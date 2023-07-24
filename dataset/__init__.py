@@ -43,6 +43,9 @@ def build_dataset(args, training):
                 augmentation=args.data_augmentation,
             )
         else:
+            print(f'd_type = {d_type}')
+            print(f'd_root = {d_root}')
+            print(f'd_list = {d_list}')
             raise NotImplementedError
 
         datasets.append(dataset)
